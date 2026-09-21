@@ -22,6 +22,7 @@ export async function getUpdatesAfter(
       incidentId,
       sequence: { $gt: sequence },
     })
+    .project<IncidentUpdate>({ _id: 0 })
     .sort({ sequence: 1 })
     .limit(limit)
     .toArray();

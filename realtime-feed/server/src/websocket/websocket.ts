@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { IncomingMessage, Server } from "node:http";
+
 import { createUpdate } from "../services/update-service";
 import { IncidentUpdate } from "../models/update";
 
@@ -8,7 +9,10 @@ type ClientMessage = {
   message: string;
 };
 
-const clientsByIncident = new Map<string, Set<WebSocket>>();
+const clientsByIncident = new Map<
+  string,
+  Set<WebSocket>
+>();
 
 function addClient(
   incidentId: string,
@@ -28,7 +32,8 @@ function removeClient(
   incidentId: string,
   socket: WebSocket
 ): void {
-  const clients = clientsByIncident.get(incidentId);
+  const clients =
+    clientsByIncident.get(incidentId);
 
   if (!clients) {
     return;
@@ -44,7 +49,8 @@ function removeClient(
 export function broadcastUpdate(
   update: IncidentUpdate
 ): void {
-  const clients = clientsByIncident.get(update.incidentId);
+  const clients =
+    clientsByIncident.get(update.incidentId);
 
   if (!clients) {
     return;
@@ -82,7 +88,9 @@ function parseClientMessage(
   rawMessage: Buffer
 ): ClientMessage | null {
   try {
-    const parsed = JSON.parse(rawMessage.toString());
+    const parsed = JSON.parse(
+      rawMessage.toString()
+    );
 
     if (
       parsed?.type !== "publish" ||
@@ -109,81 +117,104 @@ export function setupWebSocketServer(
     path: "/ws",
   });
 
-  wss.on("connection", (socket, request: IncomingMessage) => {
-    const url = new URL(
-      request.url ?? "",
-      "http://localhost"
-    );
+  wss.on(
+    "connection",
+    (socket, request: IncomingMessage) => {
+      const url = new URL(
+        request.url ?? "",
+        "http://localhost"
+      );
 
-    const incidentId = url.searchParams.get("incidentId");
+      const incidentId =
+        url.searchParams.get("incidentId");
 
-    if (!incidentId) {
-      sendError(socket, "incidentId is required");
-      socket.close(1008, "incidentId is required");
-      return;
-    }
-
-    addClient(incidentId, socket);
-
-    console.log(
-      `WebSocket client connected to incident ${incidentId}`
-    );
-
-    socket.send(
-      JSON.stringify({
-        type: "connected",
-        incidentId,
-      })
-    );
-
-    socket.on("message", async (rawMessage: Buffer) => {
-      const message = parseClientMessage(rawMessage);
-
-      if (!message) {
+      if (!incidentId) {
         sendError(
           socket,
-          "Invalid message. Expected { type: 'publish', message: string }"
+          "incidentId is required"
         );
+
+        socket.close(
+          1008,
+          "incidentId is required"
+        );
+
         return;
       }
 
-      try {
-        const update = await createUpdate(
-          incidentId,
-          message.message
-        );
-
-        broadcastUpdate(update);
-      } catch (error) {
-        console.error(
-          "Failed to create WebSocket update:",
-          error
-        );
-
-        sendError(
-          socket,
-          "Failed to create incident update"
-        );
-      }
-    });
-
-    socket.on("close", () => {
-      removeClient(incidentId, socket);
+      addClient(incidentId, socket);
 
       console.log(
-        `WebSocket client disconnected from incident ${incidentId}`
+        `WebSocket client connected to incident ${incidentId}`
       );
-    });
 
-    socket.on("error", (error) => {
-      console.error(
-        `WebSocket error for incident ${incidentId}:`,
-        error
+      socket.send(
+        JSON.stringify({
+          type: "connected",
+          incidentId,
+        })
       );
-    });
-  });
 
-  console.log("WebSocket server available at /ws");
+      socket.on(
+        "message",
+        async (rawMessage: Buffer) => {
+          const message =
+            parseClientMessage(rawMessage);
+
+          if (!message) {
+            sendError(
+              socket,
+              "Invalid message. Expected { type: 'publish', message: string }"
+            );
+
+            return;
+          }
+
+          try {
+            const update = await createUpdate(
+              incidentId,
+              message.message
+            );
+
+            broadcastUpdate(update);
+          } catch (error) {
+            console.error(
+              "Failed to create WebSocket update:",
+              error
+            );
+
+            sendError(
+              socket,
+              "Failed to create incident update"
+            );
+          }
+        }
+      );
+
+      socket.on("close", () => {
+        removeClient(
+          incidentId,
+          socket
+        );
+
+        console.log(
+          `WebSocket client disconnected from incident ${incidentId}`
+        );
+      });
+
+      socket.on("error", (error) => {
+        console.error(
+          `WebSocket error for incident ${incidentId}:`,
+          error
+        );
+      });
+    }
+  );
+
+  console.log(
+    "WebSocket server available at /ws"
+  );
 
   return wss;
 }
+
